@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 
 
-def get_llm(provider: str = None, temperature: float = 0.0):
+def get_llm(provider: str = None, temperature: float = 0.0, json_mode: bool = False):
     """
     Trả về BaseChatModel tương ứng với provider được chọn.
 
@@ -24,6 +24,9 @@ def get_llm(provider: str = None, temperature: float = 0.0):
         provider    : "openai" | "gemini" | "anthropic" | "ollama" | "openrouter"
                       Mặc định: đọc PROVIDER từ .env (config.PROVIDER)
         temperature : độ ngẫu nhiên (0.0 = tất định, 1.0 = sáng tạo)
+        json_mode   : bật response_format={"type": "json_object"} (chỉ openrouter/
+                      openai). Dùng cho LLM-judge cần JSON thuần — KHÔNG bật cho
+                      đường generate thường.
 
     Returns:
         BaseChatModel instance sẵn sàng sử dụng
@@ -72,12 +75,21 @@ def get_llm(provider: str = None, temperature: float = 0.0):
     elif provider == "openrouter":
         # OpenRouter dùng OpenAI-compatible API
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=config.OPENROUTER_MODEL,
-            api_key=config.OPENROUTER_API_KEY,
-            base_url=config.OPENROUTER_BASE_URL,
-            temperature=temperature,
-        )
+        kwargs = {
+            "model": config.OPENROUTER_MODEL,
+            "api_key": config.OPENROUTER_API_KEY,
+            "base_url": config.OPENROUTER_BASE_URL,
+            "temperature": temperature,
+            # Model free chạy trên shared pool → hay bị 429 thoáng qua.
+            # max_retries: client tự backoff & retry thay vì crash cả pipeline.
+            "max_retries": 30,
+            "timeout": 300,
+        }
+        if json_mode:
+            # ox-alpha hỗ trợ response_format (JSON mode, không enforce schema) —
+            # giúp RAGAS parser bớt RagasOutputParserException do fences/extra text
+            kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+        return ChatOpenAI(**kwargs)
 
     else:
         raise ValueError(
@@ -98,14 +110,16 @@ def get_embeddings(provider: str = None):
 
     Args:
         provider: "openai" | "gemini" | "anthropic" | "ollama" | "openrouter"
-                  Mặc định: đọc PROVIDER từ .env
+                  Mặc định: đọc EMBEDDING_PROVIDER từ .env (nếu có),
+                  fallback về PROVIDER
 
     Returns:
         Embeddings instance sẵn sàng sử dụng
     """
-    provider = (provider or config.PROVIDER).lower()
+    # Ưu tiên: tham số truyền vào > EMBEDDING_PROVIDER (.env) > PROVIDER (.env)
+    provider = (provider or config.EMBEDDING_PROVIDER or config.PROVIDER).lower()
 
-    if provider in ("openai", "openrouter"):
+    if provider == "openai":
         from langchain_openai import OpenAIEmbeddings
         kwargs = {
             "model": config.OPENAI_EMBEDDING_MODEL,
@@ -115,7 +129,8 @@ def get_embeddings(provider: str = None):
             kwargs["base_url"] = config.OPENAI_BASE_URL
         return OpenAIEmbeddings(**kwargs)
 
-    elif provider == "gemini":
+    elif provider in ("gemini", "openrouter"):
+        print("💡 OpenRouter không có Embeddings API — đang sử dụng phân hệ Vector của Google (Gemini).")
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
         return GoogleGenerativeAIEmbeddings(
             model=config.GEMINI_EMBEDDING_MODEL,

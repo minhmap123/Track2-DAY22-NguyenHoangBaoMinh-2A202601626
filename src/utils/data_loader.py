@@ -62,8 +62,23 @@ def build_vectorstore(chunks: list, embeddings):
         FAISS vectorstore đã được index và sẵn sàng dùng để retrieve
     """
     from langchain_community.vectorstores import FAISS
+    import time
+
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    import config
 
     print(f"🔨 Đang tạo FAISS index từ {len(chunks)} chunks ...")
-    vectorstore = FAISS.from_texts(chunks, embeddings)
+    # Lách giới hạn 100 request/phút của API Google miễn phí —
+    # CHỈ cần khi embedding chạy bằng Gemini; Ollama (local) không bị limit này.
+    emb_provider = (config.EMBEDDING_PROVIDER or config.PROVIDER or "").lower()
+    if len(chunks) > 90 and emb_provider == "gemini":
+        vectorstore = FAISS.from_texts(chunks[:90], embeddings)
+        print("⏳ Hệ thống nghỉ 65 giây để vượt rào Rate Limit của cấp Free Tier từ Google...")
+        time.sleep(65)
+        vectorstore.add_texts(chunks[90:])
+    else:
+        vectorstore = FAISS.from_texts(chunks, embeddings)
+        
     print("✅ FAISS vectorstore đã sẵn sàng.")
     return vectorstore
