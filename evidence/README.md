@@ -25,30 +25,32 @@ Bằng chứng thực thi cho 4 nhiệm vụ của lab. Mỗi file tương ứng
 
 ## Phân tích kết quả V1 vs V2
 
-> ⏳ **Chờ điền sau khi Bước 3 (RAGAS) hoàn thành.**
-
 ### Điểm số
 
-| Metric | V1 | V2 |
-|---|---|---|
-| faithfulness | TBD | TBD |
-| answer_relevancy | TBD | TBD |
-| context_recall | TBD | TBD |
-| context_precision | TBD | TBD |
+| Metric             |     V1 |     V2 | Thắng |
+|---|---|---|---|
+| faithfulness       | **0.9701** ⭐ | 0.8389 | V1 |
+| answer_relevancy   | **0.8940** | 0.8181 | V1 |
+| context_recall     | 0.9787 | 0.9767 | ≈ ngang |
+| context_precision  | 0.9244 | 0.9250 | ≈ ngang |
+
+**Mục tiêu faithfulness ≥ 0.8: ĐẠT** (cả 2 version đều vượt; V1 đạt thêm ngưỡng 0.9).
 
 ### Phân tích
 
-> TODO: điền 2–4 đoạn ngắn:
-> - Phiên bản nào thắng tổng thể và vì sao
-> - Sự khác biệt giữa 2 system prompt (V1 trợ lý ngắn gọn 2–4 câu vs V2 chuyên gia hàn lâm 3–5 câu) tác động thế nào lên từng metric
-> - Faithfulness có đạt mục tiêu ≥ 0.8 không
+**V1 thắng trên cả 2 metric phụ thuộc vào chất lượng sinh văn bản** (faithfulness, answer_relevancy), trong khi 2 metric thuần retrieval (context_recall, context_precision) gần như trùng khớp giữa 2 version. Điều này nhất quán với thiết kế thí nghiệm: cả 2 prompt dùng chung retriever (FAISS, k=3) nên phần contexts hoàn toàn giống nhau — khác biệt chỉ nằm ở cách LLM diễn đạt câu trả lời.
+
+**Vì sao V1 (ngắn gọn 2–4 câu) ăn điểm faithfulness cao hơn V2 (hàn lâm 3–5 câu)?** Faithfulness đo tỷ lệ claim trong câu trả lời có căn cứ trong contexts. Câu trả lời càng dài và "hàn lâm", model càng có xu hướng bổ sung kiến thức nền (elaboration) không có trong context — mỗi câu thêm là một cơ hội phát sinh unsupported claim. Prompt V1 ép câu trả lời trực diện nên gần như mọi câu đều truy vết được về nguồn. Đây là minh họa kinh điển cho trade-off: prompt giàu tính hàn lâm tăng độ phong phú nhưng giảm grounding.
+
+**answer_relevancy thấp hơn faithfulness ở cả 2 version** là pattern thường thấy của RAGAS: metric này sinh câu hỏi ngược từ câu trả lời rồi so độ tương đồng embedding với câu hỏi gốc — câu trả lời dài (V2) dễ lan man khỏi trọng tâm câu hỏi, khiến V2 tụt nhiều hơn (0.818 vs 0.894).
 
 ### Quan sát về multilingual evaluation
 
-> TODO (nếu answer_relevancy thấp bất thường): hệ QA pairs và knowledge base là tiếng Anh,
-> nhưng cả 2 system prompt viết bằng tiếng Việt và không khóa ngôn ngữ đầu ra.
-> Metric `answer_relevancy` nhúng câu trả lời bằng `nomic-embed-text` (English-centric)
-> nên nếu model trả lời tiếng Việt, điểm bị kéo xuống giả tạo dù nội dung đúng.
+Hệ QA pairs và knowledge base là tiếng Anh, nhưng cả 2 system prompt viết bằng tiếng Việt và không khóa ngôn ngữ đầu ra. Rủi ro lý thuyết: `answer_relevancy` nhúng câu trả lời bằng `nomic-embed-text` (English-centric), nếu model trả lời tiếng Việt thì điểm bị kéo xuống giả tạo. Trong thực tế chạy, điểm answer_relevancy ở mức healthy (0.82–0.89) cho thấy ox-alpha đã tự động trả lời tiếng Anh theo ngữ cảnh câu hỏi — language leakage xảy ra nhưng hạn chế. Nếu muốn loại trừ hẳn biến nhiễu này, có thể thêm dòng `"Always answer in English."` vào system prompt.
+
+### Ghi chú về độ tin cậy của phép đo
+
+Eval chia theo chunk 10 samples × 4 metrics với resume-checkpoint; tỷ lệ sample lỗi parser (ox-alpha trả sai JSON format cho judge, bị gán NaN rồi nanmean loại bỏ) khoảng 10–15% mỗi chunk. Mean tính trên ~85–90% samples — đủ đại diện cho so sánh tương đối giữa 2 version.
 
 ## Ghi chú kỹ thuật
 
